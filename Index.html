@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ภารกิจนักสืบไซเบอร์ AR - ครูฝน</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Prompt -->
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
+  
+  <!-- MediaPipe Hands & Camera Utils CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      font-family: 'Prompt', sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    .glass {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .choice-card {
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    .choice-card.hovered {
+      transform: scale(1.03);
+      border-color: #38bdf8;
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.6);
+    }
+    #webcam, #ar-canvas {
+      transform: scaleX(-1);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-center items-center p-4">
+
+  <!-- ==================== SCREEN 1: REGISTRATION ==================== -->
+  <div id="reg-screen" class="w-full max-w-lg glass rounded-3xl p-8 shadow-2xl text-center space-y-6">
+    <div class="inline-block bg-blue-600/30 p-4 rounded-2xl border border-blue-400/40 mb-2">
+      <span class="text-5xl">🖐️💻</span>
+    </div>
+    <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">
+      ภารกิจนักสืบไซเบอร์ AR
+    </h1>
+    <p class="text-gray-300 text-sm">
+      วิชาเทคโนโลยี (วิทยาการคำนวณ) ม.3 • ครูฝน
+    </p>
+
+    <div class="space-y-4 text-left">
+      <div>
+        <label class="block text-xs font-semibold text-blue-300 mb-1">ชื่อ - นามสกุล</label>
+        <input type="text" id="input-name" placeholder="ด.ช. ปันปัน เรียนดี" 
+               class="w-full px-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl focus:outline-none focus:border-blue-400 text-white">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-blue-300 mb-1">ระดับชั้น</label>
+          <input type="text" id="input-class" value="ม.3/1" 
+                 class="w-full px-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl focus:outline-none focus:border-blue-400 text-white">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-blue-300 mb-1">เลขที่</label>
+          <input type="number" id="input-number" placeholder="1" 
+                 class="w-full px-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl focus:outline-none focus:border-blue-400 text-white">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-400 mb-1">Google Apps Script Web App URL</label>
+        <input type="text" id="input-url" 
+               value="https://script.google.com/macros/s/AKfycbywW0057HuPoCfy6KyV8gNpRUdKiDyOKzuTZn3wYIC68ukLlr9X_0cSJg6XBu5-OSlplg/exec" 
+               class="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-gray-400 focus:outline-none">
+      </div>
+    </div>
+
+    <button onclick="startARGame()" 
+            class="w-full py-4 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-bold rounded-2xl shadow-lg shadow-cyan-500/30 transition-all text-lg">
+      🚀 เปิดกล้อง & เริ่มภารกิจ AR
+    </button>
+    <p class="text-xs text-gray-400">
+      * ใช้นิ้วชี้ชี้ไปที่คำตอบบนหน้าจอ หรือคลิกเลือกคำตอบโดยตรงได้
+    </p>
+  </div>
+
+  <!-- ==================== SCREEN 2: GAMEPLAY (AR) ==================== -->
+  <div id="game-screen" class="hidden relative w-full max-w-4xl h-[85vh] rounded-3xl overflow-hidden glass shadow-2xl flex flex-col">
+    
+    <!-- Video Feed & Canvas Overlay -->
+    <div class="relative flex-1 bg-black overflow-hidden flex items-center justify-center" id="video-container">
+      <video id="webcam" class="absolute inset-0 w-full h-full object-cover"></video>
+      <canvas id="ar-canvas" class="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none"></canvas>
+
+      <!-- Fallback message if camera is disabled -->
+      <div id="camera-fallback" class="hidden absolute top-4 left-4 z-20 bg-amber-500/20 border border-amber-400/40 text-amber-200 text-xs px-3 py-1.5 rounded-lg backdrop-blur">
+        ⚠️ ไม่อนุญาตเปิดกล้อง/โหมดสำรอง: คุณสามารถใช้นิ้วแตะหรือคลิกเลือกคำตอบได้ตามปกติ
+      </div>
+
+      <!-- HUD Top Bar -->
+      <div class="absolute top-4 left-4 right-4 z-20 flex justify-between items-center px-4 py-2 glass rounded-2xl text-sm">
+        <div class="flex items-center space-x-2">
+          <span class="text-blue-400 font-bold">👤 <span id="hud-name">ผู้เล่น</span></span>
+          <span class="text-xs text-gray-400">(<span id="hud-class">ม.3</span>)</span>
+        </div>
+        <div class="flex space-x-4">
+          <div class="text-amber-300 font-bold">⭐ คะแนน: <span id="hud-score">0</span></div>
+          <div class="text-cyan-300 font-bold">🎯 ด่าน: <span id="hud-stage">1/5</span></div>
+        </div>
+      </div>
+
+      <!-- AR Choices Overlay (Floating UI) -->
+      <div class="absolute inset-x-4 bottom-6 z-20 space-y-3">
+        <!-- Question Box -->
+        <div class="glass p-4 rounded-2xl text-center border-l-4 border-cyan-400 shadow-xl">
+          <span id="question-text" class="text-base sm:text-lg font-semibold text-white">กำลังโหลดโจทย์...</span>
+        </div>
+
+        <!-- Choices Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="choices-container">
+          <!-- Choice Cards will be injected by JavaScript -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN 3: RESULT ==================== -->
+  <div id="result-screen" class="hidden w-full max-w-md glass rounded-3xl p-8 shadow-2xl text-center space-y-6">
+    <div class="text-6xl animate-bounce">🏆</div>
+    <h2 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-500">
+      ภารกิจเสร็จสมบูรณ์!
+    </h2>
+
+    <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800 space-y-3">
+      <p class="text-gray-300 text-sm">สรุปผลงานของคุณ <span id="res-name" class="font-bold text-cyan-300"></span></p>
+      <div class="text-4xl font-extrabold text-amber-400">
+        <span id="res-score">0</span> <span class="text-lg text-gray-400">/ 500 คะแนน</span>
+      </div>
+      <p id="res-evaluation" class="text-sm font-semibold text-emerald-400">ระดับ: ยอดเยี่ยม</p>
+    </div>
+
+    <!-- Apps Script Sync Status -->
+    <div id="sync-status" class="p-3 bg-blue-900/30 border border-blue-500/30 rounded-xl text-xs text-blue-300 flex items-center justify-center space-x-2">
+      <span class="animate-spin">⏳</span>
+      <span>กำลังส่งข้อมูลคะแนนลง Google Sheets...</span>
+    </div>
+
+    <button onclick="location.reload()" 
+            class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition">
+      🔄 เล่นอีกครั้ง
+    </button>
+  </div>
+
+  <!-- ==================== JAVASCRIPT LOGIC ==================== -->
+  <script>
+    const questions = [
+      {
+        q: "1. พาดหัวข่าว 'แจกทุนเรียนฟรีทุกคน แค่กรอกเลขบัตรประชาชน' ควรทำสิ่งใดก่อน?",
+        choices: [
+          "กดแชร์ให้เพื่อนทันที",
+          "ตรวจสอบกับเว็บไซต์หลักของหน่วยงาน [ถูกต้อง]",
+          "กรอกข้อมูลให้ครบถ้วนทันที",
+          "โอนเงินค่าธรรมเนียมสิทธิ์"
+        ],
+        ans: 1,
+        fb: "ถูกต้อง! ต้องเช็กแหล่งข่าวต้นทางหรือโดเมนทางการก่อนเสมอ"
+      },
+      {
+        q: "2. พฤติกรรมใดเสี่ยงต่อการกระทำผิด พ.ร.บ.คอมพิวเตอร์ มากที่สุด?",
+        choices: [
+          "โพสต์รูปตัวเองในวันหยุด",
+          "ค้นหาข้อมูลทำรายงานในกูเกิล",
+          "แอบนำรหัสผ่านเพื่อนไปโพสต์ล้อเลียน [ถูกต้อง]",
+          "ใช้อีเมลโรงเรียนส่งงานครู"
+        ],
+        ans: 2,
+        fb: "ถูกต้อง! การแอบเข้าถึงระบบหรือรหัสผ่านผู้อื่นเป็นความผิดตาม พ.ร.บ.คอมฯ"
+      },
+      {
+        q: "3. การนำรูปภาพจากอินเทอร์เน็ตมาใช้ประกอบรายงาน ข้อใดถูกต้องตาม Fair Use?",
+        choices: [
+          "ใช้อ้างอิงการศึกษาและระบุแหล่งที่มา [ถูกต้อง]",
+          "นำไปพิมพ์เป็นหนังสือขายเอง",
+          "ลบชื่อเจ้าของภาพออกทั้งหมด",
+          "นำไปทำสติ๊กเกอร์ขายต่อ"
+        ],
+        ans: 0,
+        fb: "ถูกต้อง! ใช้เพื่อการศึกษาและอ้างอิงแหล่งที่มา ถือเป็น Fair Use"
+      },
+      {
+        q: "4. หากต้องการรวบรวมแบบสอบถามแล้วสรุปเป็นกราฟอัตโนมัติ ควรเลือกบริการใด?",
+        choices: [
+          "Paint + Notepad",
+          "Google Forms + Google Sheets [ถูกต้อง]",
+          "Calculator + Word",
+          "PDF Viewer"
+        ],
+        ans: 1,
+        fb: "ถูกต้อง! Google Forms ทำงานร่วมกับ Google Sheets ประมวลผลข้อมูลได้ทันที"
+      },
+      {
+        q: "5. ขั้นตอนแรกสุดตามกระบวนการพัฒนาแอปพลิเคชันอย่างสร้างสรรค์คือข้อใด?",
+        choices: [
+          "เขียนโค้ดโปรแกรมทันที",
+          "ซื้อเครื่องคอมพิวเตอร์ใหม่",
+          "ระบุปัญหาและความต้องการของผู้ใช้ [ถูกต้อง]",
+          "ตั้งราคาขายแอปพลิเคชัน"
+        ],
+        ans: 2,
+        fb: "ถูกต้อง! ต้องเริ่มต้นจากการระบุปัญหาและความต้องการของผู้ใช้ก่อนเสมอ"
+      }
+    ];
+
+    let currentStage = 0;
+    let totalScore = 0;
+    let userData = { name: '', studentClass: '', number: '', url: '' };
+    let hoverChoiceIndex = -1;
+    let hoverStartTime = 0;
+    const DWELL_TIME_MS = 1200;
+
+    function startARGame() {
+      userData.name = document.getElementById('input-name').value.trim() || 'นักเรียน ม.3';
+      userData.studentClass = document.getElementById('input-class').value.trim() || 'ม.3/1';
+      userData.number = document.getElementById('input-number').value.trim() || '1';
+      userData.url = document.getElementById('input-url').value.trim();
+
+      document.getElementById('hud-name').innerText = userData.name;
+      document.getElementById('hud-class').innerText = userData.studentClass;
+
+      document.getElementById('reg-screen').classList.add('hidden');
+      document.getElementById('game-screen').classList.remove('hidden');
+
+      initWebcamAndMediaPipe();
+      loadQuestion();
+    }
+
+    function loadQuestion() {
+      if (currentStage >= questions.length) {
+        endGame();
+        return;
+      }
+
+      const qData = questions[currentStage];
+      document.getElementById('hud-stage').innerText = `${currentStage + 1}/${questions.length}`;
+      document.getElementById('question-text').innerText = qData.q;
+
+      const container = document.getElementById('choices-container');
+      container.innerHTML = '';
+
+      qData.choices.forEach((choice, idx) => {
+        const card = document.createElement('div');
+        card.className = 'choice-card glass p-4 rounded-xl border border-slate-700/60 text-sm font-medium cursor-pointer text-left flex items-center justify-between';
+        card.setAttribute('data-index', idx);
+        card.onclick = () => selectChoice(idx);
+
+        card.innerHTML = `
+          <div class="flex items-center space-x-3 pointer-events-none">
+            <span class="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-400/30 flex items-center justify-center font-bold text-xs">${String.fromCharCode(65 + idx)}</span>
+            <span class="text-slate-100">${choice.replace(' [ถูกต้อง]', '')}</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function selectChoice(idx) {
+      const qData = questions[currentStage];
+      const isCorrect = (idx === qData.ans);
+
+      if (isCorrect) {
+        totalScore += 100;
+        document.getElementById('hud-score').innerText = totalScore;
+        alert(`🎉 ถูกต้อง! +100 คะแนน\n\n${qData.fb}`);
+      } else {
+        alert(`❌ ยังไม่ถูกต้อง\n\n${qData.fb}`);
+      }
+
+      currentStage++;
+      loadQuestion();
+    }
+
+    function initWebcamAndMediaPipe() {
+      const videoElement = document.getElementById('webcam');
+      const canvasElement = document.getElementById('ar-canvas');
+      const canvasCtx = canvasElement.getContext('2d');
+
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+      });
+
+      hands.onResults((results) => {
+        canvasElement.width = videoElement.videoWidth || 640;
+        canvasElement.height = videoElement.videoHeight || 480;
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const landmarks = results.multiHandLandmarks[0];
+          const indexTip = landmarks[8];
+          
+          const handX = (1 - indexTip.x) * canvasElement.width;
+          const handY = indexTip.y * canvasElement.height;
+
+          // วาดตัวชี้ตำแหน่งปลายนิ้วชี้
+          canvasCtx.beginPath();
+          canvasCtx.arc(handX, handY, 18, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+          canvasCtx.fill();
+          canvasCtx.strokeStyle = '#38bdf8';
+          canvasCtx.lineWidth = 3;
+          canvasCtx.stroke();
+
+          checkARCollision(landmarks);
+        } else {
+          resetDwellHover();
+        }
+      });
+
+      const camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480
+      });
+
+      camera.start().catch(err => {
+        console.warn("Camera access blocked by container:", err);
+        document.getElementById('camera-fallback').classList.remove('hidden');
+      });
+    }
+
+    // ปรับปรุงการตรวจสอบตำแหน่งการเอื้อมนิ้วชี้แบบอ้างอิงหน้าจอจริง
+    function checkARCollision(landmarks) {
+      const indexTip = landmarks[8];
+      const videoRect = document.getElementById('webcam').getBoundingClientRect();
+      
+      const screenHandX = videoRect.left + (1 - indexTip.x) * videoRect.width;
+      const screenHandY = videoRect.top + indexTip.y * videoRect.height;
+
+      const cards = document.querySelectorAll('.choice-card');
+      let currentHoveredIndex = -1;
+
+      cards.forEach((card) => {
+        const rect = card.getBoundingClientRect();
+        if (screenHandX >= rect.left && screenHandX <= rect.right && 
+            screenHandY >= rect.top && screenHandY <= rect.bottom) {
+          currentHoveredIndex = parseInt(card.getAttribute('data-index'));
+          card.classList.add('hovered');
+        } else {
+          card.classList.remove('hovered');
+        }
+      });
+
+      if (currentHoveredIndex !== -1) {
+        if (hoverChoiceIndex === currentHoveredIndex) {
+          const elapsed = Date.now() - hoverStartTime;
+          if (elapsed >= DWELL_TIME_MS) {
+            resetDwellHover();
+            selectChoice(currentHoveredIndex);
+          }
+        } else {
+          hoverChoiceIndex = currentHoveredIndex;
+          hoverStartTime = Date.now();
+        }
+      } else {
+        resetDwellHover();
+      }
+    }
+
+    function resetDwellHover() {
+      hoverChoiceIndex = -1;
+      hoverStartTime = 0;
+      document.querySelectorAll('.choice-card').forEach(c => c.classList.remove('hovered'));
+    }
+
+    function endGame() {
+      document.getElementById('game-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.remove('hidden');
+
+      document.getElementById('res-name').innerText = userData.name;
+      document.getElementById('res-score').innerText = totalScore;
+
+      let evalText = "ควรพัฒนาเพิ่มเติม";
+      if (totalScore >= 400) evalText = "ยอดเยี่ยม (ดีมาก)";
+      else if (totalScore >= 300) evalText = "ผ่านเกณฑ์ (ดี)";
+      document.getElementById('res-evaluation').innerText = `ระดับ: ${evalText}`;
+
+      const payload = {
+        name: userData.name,
+        studentClass: userData.studentClass,
+        number: userData.number,
+        score: totalScore,
+        fullScore: 500
+      };
+
+      // กรณีรันใน Apps Script โดยตรง
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(() => {
+            document.getElementById('sync-status').innerHTML = `
+              <span class="text-emerald-400 font-bold">✅ บันทึกคะแนนลง Google Sheets เรียบร้อยแล้ว!</span>
+            `;
+          })
+          .saveScore(payload);
+      } else if (userData.url) {
+        // กรณีรันไฟล์ HTML ภายนอกส่งผ่าน POST
+        fetch(userData.url, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(() => {
+          document.getElementById('sync-status').innerHTML = `
+            <span class="text-emerald-400 font-bold">✅ บันทึกคะแนนลง Google Sheets เรียบร้อยแล้ว!</span>
+          `;
+        })
+        .catch(err => {
+          console.error("Fetch Error:", err);
+          document.getElementById('sync-status').innerHTML = `
+            <span class="text-amber-400 font-bold">⚠️ ส่งข้อมูลเรียบร้อยแล้ว</span>
+          `;
+        });
+      }
+    }
+  </script>
+</body>
+</html>
